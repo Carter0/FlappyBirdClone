@@ -1,0 +1,503 @@
+module Admin.Flappy exposing (Model, Msg(..), initialModel, sub, update, view)
+
+import Admin.VulnerabilityImpactReport exposing (Model)
+import Api.Mutation
+import Api.Object
+import Api.Object.User
+import Api.Query
+import Api.Scalar
+import ApiRequest exposing (ApiRequestData)
+import Browser.Events exposing (onAnimationFrame, onKeyDown)
+import CorvusDesignSystem as CDS
+import Data.Session exposing (Session)
+import Graphql.SelectionSet as SelectionSet exposing (SelectionSet, with)
+import Html exposing (Html, b, br, div, h2, img, small, table, td, text, th, tr)
+import Html.Attributes exposing (class, id, src, style)
+import Html.Events exposing (onClick)
+import Json.Decode as Decode
+import Model.Ids exposing (UserId(..))
+import Random
+import RemoteData
+import Time exposing (Posix)
+import View.Card
+import View.Header
+import View.Util
+
+
+
+-- Subscriptions
+
+
+sub : Sub Msg
+sub =
+    Sub.batch
+        [ onAnimationFrame Tick
+        , onKeyDown (Decode.succeed KeyDown)
+        ]
+
+
+
+-- Model
+
+
+type Mode
+    = Start
+    | Playing
+    | Dead
+
+@skiploom skiploom 9 days ago
+😶
+
+@Carter0	Reply…
+
+
+type alias Model =
+    { y : Float
+    , vy : Float
+    , mode : Mode
+    , pipes : List Pipe
+    , session : Session
+    , highScores : List HighScore
+    }
+
+
+type alias Pipe =
+    { x : Float
+    , y : Float
+    , passed : Bool
+    }
+
+
+type alias HighScore =
+    { name : String
+    , score : Int
+    }
+
+
+birdHeight : Float
+birdHeight =
+    40.0
+
+
+birdXPosition : Float
+birdXPosition =
+    20.0
+
+
+pipeGap : Float
+pipeGap =
+    birdHeight * 3
+
+
+pipeWidth : Float
+pipeWidth =
+    60.0
+
+
+gameHeight : Float
+gameHeight =
+    1000.0
+
+
+gameWidth : Float
+gameWidth =
+    700.0
+
+
+initialModel : Session -> Model
+initialModel session =
+    { y = gameHeight / 2
+    , vy = 0.0
+    , mode = Start
+    , pipes = [ Pipe gameWidth (gameHeight / 2) False ]
+    , session = session
+    , highScores = []
+    }
+
+
+
+-- View
+
+
+floatToPx : Float -> String
+floatToPx float =
+    String.fromFloat float ++ "px"
+
+
+newGameButton : Bool -> Html Msg
+newGameButton showAnyKey =
+    let
+        label =
+            if showAnyKey then
+                [ text "New Game", br [] [], small [] [ text "(Press Any Key)" ] ]
+
+            else
+                [ text "New Game" ]
+    in
+    CDS.button
+        [ CDS.buttonColor CDS.Neutral
+        ]
+        [ class "new-game m-a5", onClick NewGame ]
+        label
+
+
+view : Model -> Html Msg
+view model =
+    let
+        game =
+            div
+                [ style "width" <| floatToPx gameWidth
+                , style "height" <| floatToPx gameHeight
+                , id "flappy"
+                ]
+            <|
+
+@Carter0 Carter0 9 days ago
+😢
+
+@Carter0	Reply…
+                case model.mode of
+                    Dead ->
+                        gameOverView model
+
+                    Start ->
+                        [ div [ class "text-center p-a5" ] [ newGameButton True ] ]
+
+                    Playing ->
+                        playView model
+    in
+    div []
+        [ View.Header.simple "Flappy Crow"
+
+@skiploom skiploom 9 days ago
+Thoughts on removing the header from this page? It's large enough to make the page scrollable. If a player uses the "up" or "down" key, the page will scroll, making it a little hard to play for the first few seconds. I wholeheartedly believe that is why my score is so low.
+
+@Carter0	Reply…
+        , View.Util.pageBody
+            [ View.Card.card [ View.Card.loose, class "p-a5 flex justify-center card--gray" ] [ game ] ]
+        ]
+
+
+playView : Model -> List (Html Msg)
+playView model =
+    let
+        renderPipe : Pipe -> Html Msg
+        renderPipe p =
+            let
+                topPipeHeight =
+                    gameHeight - p.y - pipeGap
+            in
+            div
+                [ style "left" <| floatToPx p.x
+                , style "width" <| floatToPx pipeWidth
+                , style "position" "absolute"
+                ]
+                [ div
+                    [ style "height" <| floatToPx topPipeHeight
+                    , style "margin-bottom" <| floatToPx pipeGap
+                    , class "pipe"
+                    ]
+                    []
+                , div
+                    [ style "height" <| floatToPx <| gameHeight - topPipeHeight - pipeGap
+                    , class "pipe"
+                    ]
+                    []
+                ]
+    in
+    img
+        [ style "position" "absolute"
+        , style "width" <| floatToPx birdHeight
+        , style "height" <| floatToPx birdHeight
+        , style "top" <| floatToPx <| gameHeight - model.y
+        , style "left" <| floatToPx birdXPosition
+        , src <|
+            if model.vy > 0 then
+                "https://cdn.corvusinsurance.com/images/flap-a0581ddf04ac8824ed79f5ae6a1769da.png"
+
+            else
+                "https://cdn.corvusinsurance.com/images/glide-7c54124c331d42363ca3ca2c12e52444.png"
+        ]
+        [ text "bird" ]
+        :: List.map renderPipe model.pipes
+
+
+gameOverView : Model -> List (Html Msg)
+gameOverView model =
+    let
+        header : Html Msg
+        header =
+            tr []
+                [ th [ style "width" "20%" ] [ text "Rank" ]
+                , th [ style "width" "60%" ] [ text "Name" ]
+                , th [ style "width" "20%" ] [ text "Score" ]
+                ]
+
+        listElement : Int -> HighScore -> Html Msg
+        listElement ranking { name, score } =
+            tr []
+                [ td [] [ text <| String.fromInt (ranking + 1) ]
+                , td [] [ text name ]
+                , td [] [ text <| String.fromInt score ]
+                ]
+
+        obstacleCount : Int
+        obstacleCount =
+            model.pipes
+                |> numberOfPipesPassed
+
+        obstacleLabel : String
+        obstacleLabel =
+            if obstacleCount == 1 then
+                "obstacle"
+
+            else
+                "obstacles"
+    in
+    [ h2 [ class "text-center p-a5" ]
+        [ text "The bird has died. Shame on you!"
+        , br [] []
+        , text <|
+            String.concat [ "You passed ", String.fromInt obstacleCount, " ", obstacleLabel, "." ]
+        ]
+    , div [ style "width" "100%", class "flex-column align-center" ]
+        [ table [ id "leaderboard" ] <|
+            header
+                :: (model.highScores |> List.take 15 |> List.indexedMap listElement)
+        , newGameButton False
+        ]
+    ]
+
+
+numberOfPipesPassed : List Pipe -> Int
+numberOfPipesPassed pipes =
+    pipes
+        |> List.filter .passed
+        |> List.length
+
+
+
+-- Update
+
+
+type Msg
+    = GetScores (ApiRequestData ())
+    | GotScores (ApiRequestData (List HighScore))
+    | KeyDown
+    | NewGame
+    | NewPipe Float
+    | Tick Posix
+    | NoOp
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        GetScores _ ->
+            let
+                singleScoreSS : SelectionSet HighScore Api.Object.User
+                singleScoreSS =
+                    SelectionSet.succeed HighScore
+                        |> with Api.Object.User.name
+                        |> with Api.Object.User.corvyHighScore
+
+                getScores =
+                    singleScoreSS
+                        |> Api.Query.corvyScores
+                        |> ApiRequest.query model.session.id GotScores
+            in
+            ( model, getScores )
+
+        GotScores response ->
+            let
+                newScores =
+                    case response of
+                        RemoteData.Success scores ->
+                            scores
+
+                        _ ->
+                            model.highScores
+            in
+            ( { model | highScores = newScores }, Cmd.none )
+
+        KeyDown ->
+            let
+                newModel : Model
+                newModel =
+                    case model.mode of
+                        Start ->
+                            { model | mode = Playing, vy = 8 }
+
+                        Playing ->
+                            { model | vy = 8 }
+
+                        Dead ->
+                            model
+            in
+            ( newModel, Cmd.none )
+
+        NewGame ->
+            let
+                newModel : Model
+                newModel =
+                    initialModel model.session
+            in
+            ( { newModel | mode = Playing, vy = 8 }, Cmd.none )
+
+        NewPipe y ->
+            ( spawnObstacles model y, Cmd.none )
+
+        NoOp ->
+            ( model, Cmd.none )
+
+        Tick _ ->
+            case model.mode of
+                Playing ->
+                    let
+                        ( updatedModel, cmd ) =
+                            model
+                                |> animateVertical
+                                |> animateHorizontal
+                                |> checkCollisions
+                                |> passPipes
+                    in
+                    ( updatedModel
+                    , if onlyHasPassedPipes model.pipes then
+                        Random.generate NewPipe newPipeY
+
+                      else
+                        cmd
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+newPipeY : Random.Generator Float
+newPipeY =
+    Random.float 10 <| gameHeight - pipeGap - 10
+
+
+animateVertical : Model -> Model
+animateVertical model =
+    let
+        newVy =
+            model.vy - 0.5
+
+        newY =
+            if model.y <= 0 then
+                0
+
+            else
+                model.y + model.vy
+    in
+    { model | y = newY, vy = newVy }
+
+
+animateHorizontal : Model -> Model
+animateHorizontal model =
+    let
+        vx =
+            -5
+
+        newPipes =
+            List.map movePipeLeft model.pipes
+
+        movePipeLeft : Pipe -> Pipe
+        movePipeLeft p =
+            { p | x = p.x + vx }
+    in
+    { model | pipes = newPipes }
+
+
+checkCollisions : Model -> ( Model, Cmd Msg )
+checkCollisions model =
+    let
+        unpassedPipes =
+            List.filter (\pipe -> not pipe.passed) model.pipes
+
+        userId (UserId id) =
+            id
+
+        args =
+            { corvyScore = numberOfPipesPassed model.pipes
+            , id = Api.Scalar.Id <| userId model.session.userId
+            }
+
+        updateScore =
+            SelectionSet.empty
+                |> Api.Mutation.updateCorvyScore args
+                |> ApiRequest.mutation model.session.id GetScores
+    in
+    if model.y < 0 || List.any (hasCollision model) unpassedPipes then
+        ( { model | mode = Dead }, updateScore )
+
+    else
+        ( model, Cmd.none )
+
+
+hasCollision : Model -> Pipe -> Bool
+hasCollision model pipe =
+    let
+        -- top of the lower pipe
+        bottomHeight : Float
+        bottomHeight =
+            pipe.y
+
+        -- the bottom of the top pipe is located at the lower pipe's height plus
+        -- the gap between the pipes
+        topPipePosition : Float
+        topPipePosition =
+            bottomHeight + pipeGap
+
+        birdBelly =
+            model.y + birdHeight
+
+        touchingBottomPipe =
+            birdBelly < bottomHeight
+
+        touchingTopPipe =
+            model.y > topPipePosition
+
+        isBetweenPipesHorizontally =
+            (birdXPosition + birdHeight > pipe.x)
+                && (birdXPosition < pipe.x + pipeWidth)
+    in
+    isBetweenPipesHorizontally
+        && (touchingBottomPipe || touchingTopPipe)
+
+
+onlyHasPassedPipes : List Pipe -> Bool
+onlyHasPassedPipes pipes =
+    List.all .passed pipes
+
+
+passPipes : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+passPipes ( model, msg ) =
+    let
+        newPipes : List Pipe
+        newPipes =
+            List.map (\pipe -> { pipe | passed = pipe.x + pipeWidth < birdXPosition }) model.pipes
+    in
+    ( { model | pipes = newPipes }, msg )
+
+
+spawnObstacles : Model -> Float -> Model
+spawnObstacles model newY =
+    if model.mode == Playing && onlyHasPassedPipes model.pipes then
+        let
+            newPipe : Pipe
+            newPipe =
+                { x = gameWidth
+                , y = newY
+                , passed = False
+                }
+
+            pipes : List Pipe
+            pipes =
+                model.pipes ++ [ newPipe ]
+        in
+        { model | pipes = pipes }
+
+    else
+        model
