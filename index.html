@@ -6723,30 +6723,47 @@ var $evancz$elm_playground$Playground$game = F3(
 		return $elm$browser$Browser$document(
 			{init: init, subscriptions: subscriptions, update: update, view: view});
 	});
-var $author$project$Main$initialMemory = {isUpPressed: false, y: 0, yVel: 0};
+var $author$project$Main$initialMemory = {
+	isUpPressed: false,
+	pipeHeights: _Utils_Tuple2(0, 0),
+	pipeXPosition: -1000,
+	y: 0,
+	yVel: 0
+};
 var $author$project$Main$detectIfUpPressed = function (keyboard) {
 	return keyboard.up ? true : false;
 };
-var $author$project$Main$dt = 1.666;
-var $author$project$Main$gravity = (-3) * $author$project$Main$dt;
+var $author$project$Main$setPipeHeights = F2(
+	function (screen, _v0) {
+		var pipeXPosition = _v0.pipeXPosition;
+		var pipeHeights = _v0.pipeHeights;
+		return (_Utils_cmp(pipeXPosition, screen.left) < 0) ? _Utils_Tuple2(screen.bottom + (screen.bottom / 5), screen.top - (screen.top / 5)) : pipeHeights;
+	});
+var $author$project$Main$pipeSpeed = 8;
+var $author$project$Main$setPipeXPosition = F2(
+	function (screen, currentXPosition) {
+		return (_Utils_cmp(currentXPosition, screen.left) < 0) ? (screen.right - 50) : (currentXPosition - $author$project$Main$pipeSpeed);
+	});
+var $author$project$Main$gravity = -0.5;
+var $author$project$Main$jumpVelocity = 12;
 var $elm$core$Basics$not = _Basics_not;
 var $author$project$Main$yVelocityChanges = F2(
 	function (_v0, keyboard) {
 		var yVel = _v0.yVel;
 		var isUpPressed = _v0.isUpPressed;
-		return (keyboard.up && (!isUpPressed)) ? (50 * $author$project$Main$dt) : $author$project$Main$gravity;
+		return (keyboard.up && (!isUpPressed)) ? $author$project$Main$jumpVelocity : (yVel + $author$project$Main$gravity);
 	});
 var $author$project$Main$update = F2(
 	function (computer, memory) {
 		return {
 			isUpPressed: $author$project$Main$detectIfUpPressed(computer.keyboard),
+			pipeHeights: A2($author$project$Main$setPipeHeights, computer.screen, memory),
+			pipeXPosition: A2($author$project$Main$setPipeXPosition, computer.screen, memory.pipeXPosition),
 			y: memory.y + memory.yVel,
 			yVel: A2($author$project$Main$yVelocityChanges, memory, computer.keyboard)
 		};
 	});
-var $author$project$Main$birdXPosition = function (screen) {
-	return screen.left + (screen.width / 8);
-};
+var $author$project$Main$birdXPosition = -350;
 var $evancz$elm_playground$Playground$Hex = function (a) {
 	return {$: 'Hex', a: a};
 };
@@ -6788,14 +6805,46 @@ var $author$project$Main$drawBird = F2(
 			y,
 			A2($evancz$elm_playground$Playground$square, $evancz$elm_playground$Playground$blue, 40));
 	});
+var $evancz$elm_playground$Playground$green = $evancz$elm_playground$Playground$Hex('#73d216');
+var $author$project$Main$pipeWidth = 40;
+var $evancz$elm_playground$Playground$rectangle = F3(
+	function (color, width, height) {
+		return A6(
+			$evancz$elm_playground$Playground$Shape,
+			0,
+			0,
+			0,
+			1,
+			1,
+			A3($evancz$elm_playground$Playground$Rectangle, color, width, height));
+	});
+var $author$project$Main$drawBottomPipe = F2(
+	function (pipeHeight, pipeXPosition) {
+		return A3(
+			$evancz$elm_playground$Playground$move,
+			pipeXPosition,
+			pipeHeight,
+			A3($evancz$elm_playground$Playground$rectangle, $evancz$elm_playground$Playground$green, $author$project$Main$pipeWidth, 400));
+	});
+var $author$project$Main$drawTopPipe = F2(
+	function (pipeHeight, pipeXPosition) {
+		return A3(
+			$evancz$elm_playground$Playground$move,
+			pipeXPosition,
+			pipeHeight,
+			A3($evancz$elm_playground$Playground$rectangle, $evancz$elm_playground$Playground$green, $author$project$Main$pipeWidth, 400));
+	});
+var $elm$core$Tuple$second = function (_v0) {
+	var y = _v0.b;
+	return y;
+};
 var $author$project$Main$view = F2(
 	function (computer, memory) {
 		return _List_fromArray(
 			[
-				A2(
-				$author$project$Main$drawBird,
-				$author$project$Main$birdXPosition(computer.screen),
-				memory.y)
+				A2($author$project$Main$drawBird, $author$project$Main$birdXPosition, memory.y),
+				A2($author$project$Main$drawBottomPipe, memory.pipeHeights.a, memory.pipeXPosition),
+				A2($author$project$Main$drawTopPipe, memory.pipeHeights.b, memory.pipeXPosition)
 			]);
 	});
 var $author$project$Main$main = A3($evancz$elm_playground$Playground$game, $author$project$Main$view, $author$project$Main$update, $author$project$Main$initialMemory);

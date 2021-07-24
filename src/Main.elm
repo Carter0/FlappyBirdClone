@@ -21,9 +21,19 @@ gravity =
     -0.5
 
 
-birdXPosition : Screen -> Number
-birdXPosition screen =
-    screen.left + screen.width / 8
+birdXPosition : Number
+birdXPosition =
+    -350
+
+
+pipeWidth : Number
+pipeWidth =
+    40
+
+
+pipeSpeed : Number
+pipeSpeed =
+    8
 
 
 
@@ -34,12 +44,25 @@ type alias Memory =
     { y : Number
     , yVel : Number
     , isUpPressed : Bool
+    , pipeXPosition : Number
+    , pipeHeights : ( PipeHeight, PipeHeight )
+    , pipeGapModifier : Number
     }
+
+
+type alias PipeHeight =
+    Number
 
 
 initialMemory : Memory
 initialMemory =
-    { y = 0, yVel = 0, isUpPressed = False }
+    { y = 0
+    , yVel = 0
+    , isUpPressed = False
+    , pipeXPosition = -3000
+    , pipeHeights = ( 0, 0 )
+    , pipeGapModifier = 0
+    }
 
 
 
@@ -48,8 +71,9 @@ initialMemory =
 
 view : Computer -> Memory -> List Shape
 view computer memory =
-    [ drawBird (birdXPosition computer.screen) memory.y
-    , drawPipe computer.screen
+    [ drawBird birdXPosition memory.y
+    , drawBottomPipe computer.screen.bottom (Tuple.first memory.pipeHeights) memory.pipeXPosition
+    , drawTopPipe computer.screen.top (Tuple.second memory.pipeHeights) memory.pipeXPosition
     ]
 
 
@@ -58,9 +82,14 @@ drawBird x y =
     move x y (square blue 40)
 
 
-drawPipe : Screen -> Shape
-drawPipe screen =
-    move 100 10 (rectangle green 40 100)
+drawBottomPipe : Number -> PipeHeight -> Number -> Shape
+drawBottomPipe bottomOfScreen pipeHeight pipeXPosition =
+    move pipeXPosition bottomOfScreen (rectangle green pipeWidth pipeHeight)
+
+
+drawTopPipe : Number -> PipeHeight -> Number -> Shape
+drawTopPipe topOfScreen pipeHeight pipeXPosition =
+    move pipeXPosition topOfScreen (rectangle green pipeWidth pipeHeight)
 
 
 
@@ -76,20 +105,58 @@ yVelocityChanges { yVel, isUpPressed } keyboard =
         yVel + gravity
 
 
-detectIfUpPressed : Keyboard -> Bool
-detectIfUpPressed keyboard =
-    if keyboard.up then
-        True
+setPipeHeights : Screen -> Memory -> ( PipeHeight, PipeHeight )
+setPipeHeights screen { pipeGapModifier, pipeXPosition, pipeHeights } =
+    let
+        pipeGap : Number
+        pipeGap =
+            screen.height / 5
+
+        pipeHeight : Number
+        pipeHeight =
+            screen.height - pipeGap
+    in
+    if pipeXPosition < screen.left then
+        ( pipeHeight + pipeGapModifier, pipeHeight - pipeGapModifier )
 
     else
-        False
+        pipeHeights
+
+
+setPipeXPosition : Screen -> Number -> Number
+setPipeXPosition screen currentXPosition =
+    if currentXPosition < screen.left then
+        screen.right - 50
+
+    else
+        currentXPosition - pipeSpeed
+
+
+
+-- NOTE that elm playground does not have random :(
+
+
+incrementPipeGap : Screen -> Memory -> Number
+incrementPipeGap screen { pipeGapModifier, pipeXPosition } =
+    if pipeXPosition < screen.left then
+        if pipeGapModifier + 100 > screen.top then
+            screen.bottom + 100
+
+        else
+            pipeGapModifier + 100
+
+    else
+        pipeGapModifier
 
 
 update : Computer -> Memory -> Memory
 update computer memory =
     { y = memory.y + memory.yVel
     , yVel = yVelocityChanges memory computer.keyboard
-    , isUpPressed = detectIfUpPressed computer.keyboard
+    , isUpPressed = computer.keyboard.up
+    , pipeXPosition = setPipeXPosition computer.screen memory.pipeXPosition
+    , pipeHeights = setPipeHeights computer.screen memory
+    , pipeGapModifier = incrementPipeGap computer.screen memory
     }
 
 
